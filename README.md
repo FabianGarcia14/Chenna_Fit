@@ -6,6 +6,18 @@ Users can log their meals, water intake, daily macro-nutrients, and weight. The 
 
 ---
 
+## App Screenshots
+
+| Login Page | Home Page | Add Meal Page |
+| --- | --- | --- |
+| ![Login Page](assets/Screenshots/login_page.png) | ![Home Page](assets/Screenshots/homepage.png) | ![Add Meal Page](assets/Screenshots/add_meal_page.png) |
+
+| Statistics Page | Settings |
+| --- | --- |
+| ![Statistics Page](assets/Screenshots/statistics_page.png) | ![Settings](assets/Screenshots/settings.png) |
+
+---
+
 ## Features
 
 - **Interactive Mascot (Henni):** A virtual dog that reacts dynamically to your logging actions (eating, drinking, celebrating, sleeping, and encouraging).
