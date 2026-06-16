@@ -40,7 +40,7 @@ export const useStore = create<PerritoStore>((set, get) => ({
     const { user, dailyLog } = get();
 
     // No data yet → mascot is sleeping
-    if (!user || !dailyLog) {
+    if (!user || !dailyLog || !user.goals || !dailyLog.totals) {
       return 'sleeping' as const;
     }
 

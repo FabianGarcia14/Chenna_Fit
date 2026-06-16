@@ -338,8 +338,8 @@ export async function updateFastingTimes(
   const snap = await getDoc(ref);
 
   const updates: Partial<DailyLog> = {};
-  if (fastingStart !== null) updates.fastingStart = fastingStart;
-  if (fastingEnd !== null) updates.fastingEnd = fastingEnd;
+  if (fastingStart !== null && fastingStart !== 'clear') updates.fastingStart = fastingStart;
+  if (fastingEnd !== null && fastingEnd !== 'clear') updates.fastingEnd = fastingEnd;
   
   if (!snap.exists()) {
     const newLog: DailyLog = {

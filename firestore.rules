@@ -9,6 +9,16 @@ service cloud.firestore {
       match /dailyLogs/{logId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+      
+      // Cascade rules for the recentMeals subcollection
+      match /recentMeals/{comboId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Global cache for scanned products
+    match /scanned_products/{barcode} {
+      allow read, write: if request.auth != null;
     }
     
     // Deny all other access by default

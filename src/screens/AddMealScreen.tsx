@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,8 +17,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useStore } from '../store/useStore';
 import { getLocalDateString } from '../utils/dateUtils';
 import { addMealToLog, getDailyLog, editMealInLog } from '../services/firestoreService';
+import { getRecentMeals, saveRecentMeal } from '../services/recentMealsService';
+import { searchOpenFoodFacts } from '../services/openFoodFactsSearchService';
+import { parseFraction } from '../utils/parseFraction';
 import { Colors } from '../theme/colors';
-import type { Meal, MealType, USDAFoodResult, RootStackParamList, MainTabParamList, Macros } from '../types';
+import type { Meal, MealType, FoodSearchResult, RootStackParamList, MainTabParamList, Macros } from '../types';
 
 const MEAL_TYPES: MealType[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -32,7 +35,7 @@ const UNIT_CONVERSIONS: Record<string, number> = {
 };
 
 const USDA_API_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
-const API_KEY = 'DEMO_KEY';
+const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY || 'DEMO_KEY';
 
 function extractNutrient(nutrients: any[], nutrientName: string): number {
   const found = nutrients?.find((n: any) =>
@@ -46,9 +49,13 @@ export default function AddMealScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<MainTabParamList, 'AddMeal'>>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<USDAFoodResult[]>([]);
+  const [searchResults, setSearchResults] = useState<FoodSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [recentMeals, setRecentMeals] = useState<Meal[]>([]);
+  const [isFraction, setIsFraction] = useState(false);
+  const searchAbortController = useRef<AbortController | null>(null);
 
   // Form state
   const [foodName, setFoodName] = useState('');
@@ -76,29 +83,41 @@ export default function AddMealScreen() {
   useEffect(() => {
     const scannedProduct = route.params?.scannedProduct;
     const editMeal = route.params?.editMeal;
+    const copyMeal = route.params?.copyMeal;
     const dateParam = route.params?.editDate;
 
-    if (editMeal) {
-      setIsEditing(true);
-      setEditDate(dateParam || selectedDate);
-      setEditMealId(editMeal.id);
-      setFoodName(editMeal.name);
-      setMealType(editMeal.type);
-      setCalories(String(editMeal.calories));
-      setProtein(String(editMeal.macros.protein));
-      setCarbs(String(editMeal.macros.carbs));
-      setFat(String(editMeal.macros.fat));
-      setSodium(String(editMeal.macros.sodium || ''));
-      setCholesterol(String(editMeal.macros.cholesterol || ''));
-      setSugars(String(editMeal.macros.sugars || ''));
-      setFiber(String(editMeal.macros.fiber || ''));
+    if (editMeal || scannedProduct || copyMeal) {
+      setShowManualEntry(true);
+    }
+
+    if (editMeal || copyMeal) {
+      const mealToLoad = editMeal || copyMeal;
+      if (editMeal) {
+        setIsEditing(true);
+        setEditDate(dateParam || selectedDate);
+        setEditMealId(editMeal.id);
+      }
+      setFoodName(mealToLoad!.name);
+      setMealType(mealToLoad!.type);
+      setCalories(String(mealToLoad!.calories));
+      setProtein(String(mealToLoad!.macros.protein));
+      setCarbs(String(mealToLoad!.macros.carbs));
+      setFat(String(mealToLoad!.macros.fat));
+      setSodium(String(mealToLoad!.macros.sodium || ''));
+      setCholesterol(String(mealToLoad!.macros.cholesterol || ''));
+      setSugars(String(mealToLoad!.macros.sugars || ''));
+      setFiber(String(mealToLoad!.macros.fiber || ''));
       
-      if (editMeal.baseNutrition) {
-        setBaseNutrition(editMeal.baseNutrition);
-        setQuantity(String(editMeal.quantity || editMeal.baseNutrition.quantity));
-        setUnit(editMeal.unit || 'g');
+      if (mealToLoad!.baseNutrition) {
+        setBaseNutrition(mealToLoad!.baseNutrition);
+        setQuantity(String(mealToLoad!.quantity || mealToLoad!.baseNutrition.quantity));
+        setUnit(mealToLoad!.unit || 'g');
       } else {
         setBaseNutrition(null);
+        if (copyMeal) {
+          setQuantity(String(mealToLoad!.quantity || '100'));
+          setUnit(mealToLoad!.unit || 'g');
+        }
       }
     } else if (scannedProduct) {
       setFoodName(scannedProduct.name + (scannedProduct.brand ? ` (${scannedProduct.brand})` : ''));
@@ -112,12 +131,14 @@ export default function AddMealScreen() {
       const fib = scannedProduct.fiber || 0;
 
       setBaseNutrition({
-        quantity: 100,
+        quantity: 100, // OFF values are per 100g
         calories: c,
         macros: { protein: p, carbs: cb, fat: f, sodium: sod, cholesterol: chol, sugars: sug, fiber: fib }
       });
-      setQuantity('100');
-      setUnit('g');
+      // The user may have entered a custom quantity in the scanner screen
+      const initialQty = route.params?.enteredQuantity || scannedProduct.servingQuantity || 100;
+      setQuantity(String(initialQty));
+      setUnit(route.params?.enteredUnit || 'g');
       
       setCalories(String(c));
       setProtein(String(p));
@@ -133,7 +154,7 @@ export default function AddMealScreen() {
   // Listen to focus events to clear the editing state if no params are present
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      if (!route.params?.editMeal && !route.params?.scannedProduct && isEditing) {
+      if (!route.params?.editMeal && !route.params?.scannedProduct && !route.params?.copyMeal && isEditing) {
         setIsEditing(false);
         setEditMealId(null);
         setEditDate(null);
@@ -154,11 +175,34 @@ export default function AddMealScreen() {
     return unsubscribe;
   }, [navigation, route.params, isEditing]);
 
+  // Fetch recent meals when mealType changes
+  useEffect(() => {
+    async function loadRecent() {
+      if (user?.uid) {
+        try {
+          const meals = await getRecentMeals(user.uid, mealType);
+          setRecentMeals(meals.map(m => m.meal));
+        } catch (e) {
+          console.warn('Failed to load recent meals', e);
+        }
+      }
+    }
+    loadRecent();
+  }, [mealType, user]);
+
+  // Clear search results when input becomes empty
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+    }
+  }, [searchQuery]);
+
   // Scale nutrition when quantity or unit changes
   useEffect(() => {
     if (baseNutrition) {
-      const q = parseFloat(quantity);
-      if (!isNaN(q) && q >= 0 && baseNutrition.quantity > 0) {
+      const q = parseFraction(quantity);
+      if (q !== null && !isNaN(q) && q >= 0 && baseNutrition.quantity > 0) {
         const multiplier = UNIT_CONVERSIONS[unit] || 1;
         const quantityInGrams = q * multiplier;
         const ratio = quantityInGrams / baseNutrition.quantity;
@@ -176,23 +220,64 @@ export default function AddMealScreen() {
     }
   }, [quantity, unit, baseNutrition]);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+  const executeSearch = async (query: string) => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    
+    if (searchAbortController.current) {
+      searchAbortController.current.abort();
+    }
+    const abortController = new AbortController();
+    searchAbortController.current = abortController;
+    const signal = abortController.signal;
+
     setSearching(true);
     try {
-      const res = await fetch(
-        `${USDA_API_URL}?query=${encodeURIComponent(searchQuery)}&pageSize=10&api_key=${API_KEY}`
-      );
-      const data = await res.json();
-      const results: USDAFoodResult[] = (data.foods || []).map((food: any) => ({
-        fdcId: food.fdcId,
-        description: food.description || 'Unknown',
-        calories: extractNutrient(food.foodNutrients, 'energy'),
-        protein: extractNutrient(food.foodNutrients, 'protein'),
-        carbs: extractNutrient(food.foodNutrients, 'carbohydrate'),
-        fat: extractNutrient(food.foodNutrients, 'fat'),
-      }));
-      setSearchResults(results);
+      let combined: FoodSearchResult[] = [];
+
+      // Primary: Open Food Facts
+      try {
+        const offRes = await searchOpenFoodFacts(trimmedQuery, signal);
+        if (offRes && offRes.length > 0) {
+          combined = offRes;
+        }
+      } catch (e) {
+        // Silently catch OFF errors to allow fallback
+      }
+
+      // Fallback: USDA (If OFF fails or returns 0 results)
+      if (combined.length === 0) {
+        try {
+          const usdaResponse = await fetch(`${USDA_API_URL}?query=${encodeURIComponent(trimmedQuery)}&pageSize=10&api_key=${API_KEY}`, { signal });
+          if (usdaResponse.ok) {
+            const usdaData = await usdaResponse.json();
+            const usdaResults: FoodSearchResult[] = (usdaData.foods || []).map((food: any) => ({
+              fdcId: String(food.fdcId),
+              description: food.description || 'Unknown',
+              calories: extractNutrient(food.foodNutrients, 'energy'),
+              protein: extractNutrient(food.foodNutrients, 'protein'),
+              carbs: extractNutrient(food.foodNutrients, 'carbohydrate'),
+              fat: extractNutrient(food.foodNutrients, 'fat'),
+            }));
+            combined = usdaResults;
+          }
+        } catch (e) {
+          // Silently catch USDA errors
+        }
+      }
+      const uniqueNames = new Set();
+      const deduplicated = combined.filter(item => {
+        const name = item.description.toLowerCase();
+        const key = `${name}-${Math.round(item.calories)}-${Math.round(item.protein)}-${Math.round(item.carbs)}`;
+        if (uniqueNames.has(key)) return false;
+        uniqueNames.add(key);
+        return true;
+      });
+      setSearchResults(deduplicated);
     } catch (e) {
       Alert.alert('Search Error', 'Could not fetch food data. Try again.');
     } finally {
@@ -200,7 +285,8 @@ export default function AddMealScreen() {
     }
   };
 
-  const selectFood = (food: USDAFoodResult) => {
+  const selectFood = (food: FoodSearchResult) => {
+    setShowManualEntry(true);
     setFoodName(food.description);
     
     const c = food.calories;
@@ -213,15 +299,38 @@ export default function AddMealScreen() {
     const fib = food.fiber || 0;
 
     setBaseNutrition({
-      quantity: 100, // USDA default
+      quantity: food.servingQuantity || 100,
       calories: c,
       macros: { protein: p, carbs: cb, fat: f, sodium: sod, cholesterol: chol, sugars: sug, fiber: fib }
     });
-    setQuantity('100');
+    setQuantity(String(food.servingQuantity || 100));
     setUnit('g');
     
     setSearchResults([]);
     setSearchQuery('');
+  };
+
+  const selectRecentMeal = (meal: Meal) => {
+    setShowManualEntry(true);
+    setFoodName(meal.name);
+    setMealType(meal.type);
+    setCalories(String(meal.calories));
+    setProtein(String(meal.macros.protein));
+    setCarbs(String(meal.macros.carbs));
+    setFat(String(meal.macros.fat));
+    setSodium(String(meal.macros.sodium || ''));
+    setCholesterol(String(meal.macros.cholesterol || ''));
+    setSugars(String(meal.macros.sugars || ''));
+    setFiber(String(meal.macros.fiber || ''));
+    if (meal.baseNutrition) {
+      setBaseNutrition(meal.baseNutrition);
+      setQuantity(String(meal.quantity || meal.baseNutrition.quantity));
+      setUnit(meal.unit || 'g');
+    } else {
+      setBaseNutrition(null);
+      setQuantity(String(meal.quantity || '100'));
+      setUnit(meal.unit || 'g');
+    }
   };
 
   const handleSave = async () => {
@@ -247,7 +356,7 @@ export default function AddMealScreen() {
       },
       time: new Date().toISOString(),
       type: mealType,
-      quantity: parseFloat(quantity) || 0,
+      quantity: parseFraction(quantity) || 0,
       unit: unit,
       ...(baseNutrition ? {
         baseNutrition,
@@ -258,6 +367,7 @@ export default function AddMealScreen() {
       const date = isEditing ? (editDate || selectedDate) : selectedDate;
       if (isEditing && route.params?.editMeal) {
         await editMealInLog(user.uid, date, route.params.editMeal, meal);
+        await saveRecentMeal(user.uid, meal, meal.type);
         Alert.alert('✅ Meal Updated!', `${meal.name} has been updated.`);
         
         // Reset and clear editing state
@@ -281,6 +391,7 @@ export default function AddMealScreen() {
         (navigation as any).navigate('History');
       } else {
         await addMealToLog(user.uid, date, meal);
+        await saveRecentMeal(user.uid, meal, meal.type);
         Alert.alert('✅ Meal Added!', `${meal.name} has been logged.`);
         
         // Reset form
@@ -312,9 +423,40 @@ export default function AddMealScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Add Meal 🍽️</Text>
 
+        {/* Meal Type Selector (Moved to Top) */}
+        <Text style={[styles.label, { marginTop: 0 }]}>Meal Type</Text>
+        <View style={styles.mealTypeRow}>
+          {MEAL_TYPES.map((type) => (
+            <TouchableOpacity
+              key={type}
+              style={[styles.mealTypeBtn, mealType === type && styles.mealTypeBtnActive]}
+              onPress={() => setMealType(type)}
+            >
+              <Text style={[styles.mealTypeText, mealType === type && styles.mealTypeTextActive]}>
+                {type}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Quick Add List */}
+        {recentMeals.length > 0 && (
+          <View style={styles.quickAddContainer}>
+            <Text style={styles.label}>Quick Add</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickAddScroll}>
+              {recentMeals.map((meal, index) => (
+                <TouchableOpacity key={`${meal.id}-${index}`} style={styles.quickAddCard} onPress={() => selectRecentMeal(meal)}>
+                  <Text style={styles.quickAddName} numberOfLines={1}>{meal.name}</Text>
+                  <Text style={styles.quickAddCalories}>{meal.calories} cal</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Barcode Scanner */}
         <TouchableOpacity
-          style={styles.barcodeBtn}
+          style={[styles.barcodeBtn, { marginTop: 16 }]}
           onPress={() => navigation.navigate('BarcodeScanner')}
         >
           <Text style={styles.barcodeBtnEmoji}>📷</Text>
@@ -323,33 +465,55 @@ export default function AddMealScreen() {
 
         {/* Search */}
         <View style={styles.searchRow}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search USDA Food Database..."
-            placeholderTextColor={Colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+          <View style={[styles.searchInput, { flexDirection: 'row', alignItems: 'center', padding: 0 }]}>
+            <TextInput
+              style={{ flex: 1, padding: 14, color: Colors.text, fontSize: 15 }}
+              placeholder="Search Foods..."
+              placeholderTextColor={Colors.textSecondary}
+              value={searchQuery}
+              onChangeText={(text) => setSearchQuery(text.replace(/\n/g, ''))}
+              returnKeyType="search"
+              onSubmitEditing={() => executeSearch(searchQuery)}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 14 }}>
+                <Text style={{ color: Colors.textSecondary, fontSize: 16 }}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity style={styles.searchBtn} onPress={() => executeSearch(searchQuery)}>
             <Text style={styles.searchBtnText}>🔍</Text>
           </TouchableOpacity>
         </View>
 
         {/* Search Results */}
         {searching && <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />}
+        {!searching && searchQuery.length > 0 && searchResults.length === 0 && (
+          <View style={[styles.resultsCard, { alignItems: 'center', padding: 20 }]}>
+            <Text style={{ fontSize: 15, color: Colors.textSecondary, textAlign: 'center' }}>
+              No results found, please use manual entry.
+            </Text>
+            <TouchableOpacity style={[styles.manualEntryBtn, { marginTop: 16, width: '100%' }]} onPress={() => setShowManualEntry(true)}>
+              <Text style={styles.manualEntryBtnText}>➕ Manual Entry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {searchResults.length > 0 && (
           <View style={styles.resultsCard}>
-            <Text style={styles.resultsTitle}>Results</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.resultsTitle, { marginBottom: 0 }]}>Results</Text>
+              <TouchableOpacity onPress={() => setSearchResults([])}>
+                <Text style={{ fontSize: 13, color: Colors.primary }}>Clear</Text>
+              </TouchableOpacity>
+            </View>
             {searchResults.map((food) => (
               <TouchableOpacity key={food.fdcId} style={styles.resultItem} onPress={() => selectFood(food)}>
                 <Text style={styles.resultName} numberOfLines={1}>{food.description}</Text>
                 <View style={styles.resultMacros}>
-                  <Text style={styles.resultCalories}>{food.calories} kcal</Text>
-                  <Text style={styles.resultMacro}>P: {food.protein}g</Text>
-                  <Text style={styles.resultMacro}>C: {food.carbs}g</Text>
-                  <Text style={styles.resultMacro}>F: {food.fat}g</Text>
+                  <Text style={styles.resultCalories}>{Math.round(food.calories * 100) / 100} cal</Text>
+                  <Text style={styles.resultMacro}>P: {Math.round(food.protein * 100) / 100}g</Text>
+                  <Text style={styles.resultMacro}>C: {Math.round(food.carbs * 100) / 100}g</Text>
+                  <Text style={styles.resultMacro}>F: {Math.round(food.fat * 100) / 100}g</Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -357,8 +521,13 @@ export default function AddMealScreen() {
         )}
 
         {/* Manual Entry */}
+        {!showManualEntry && !(searchQuery.length > 0 && searchResults.length === 0 && !searching) ? (
+          <TouchableOpacity style={styles.manualEntryBtn} onPress={() => setShowManualEntry(true)}>
+            <Text style={styles.manualEntryBtnText}>➕ Manual Entry</Text>
+          </TouchableOpacity>
+        ) : !showManualEntry ? null : (
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>{isEditing ? 'Edit Meal' : 'Manual Entry'}</Text>
+          <Text style={styles.formTitle}>{isEditing ? 'Edit Meal' : (baseNutrition ? 'Add Meal' : 'Manual Entry')}</Text>
 
           <Text style={styles.label}>Food Name</Text>
           <TextInput
@@ -370,12 +539,19 @@ export default function AddMealScreen() {
           />
 
           <View style={{ marginTop: 10, backgroundColor: baseNutrition ? Colors.primary + '10' : Colors.surface, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: baseNutrition ? Colors.primary + '30' : Colors.surface }}>
-            <Text style={[styles.label, { marginTop: 0, color: baseNutrition ? Colors.primary : Colors.textSecondary }]}>Amount Consumed</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.label, { marginTop: 0, color: baseNutrition ? Colors.primary : Colors.textSecondary }]}>Amount Consumed</Text>
+              <TouchableOpacity onPress={() => setIsFraction(!isFraction)}>
+                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: '600' }}>
+                  {isFraction ? 'Switch to Decimal' : 'Switch to Fraction'}
+                </Text>
+              </TouchableOpacity>
+            </View>
             
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 }}>
               <TextInput
                 style={[styles.input, { flex: 1, borderColor: baseNutrition ? Colors.primary : Colors.inputBorder, backgroundColor: Colors.inputBackground, marginTop: 0 }]}
-                keyboardType="numeric"
+                keyboardType={isFraction ? 'numbers-and-punctuation' : 'numeric'}
                 value={quantity}
                 onChangeText={setQuantity}
                 placeholder={baseNutrition ? `e.g. ${baseNutrition.quantity}` : "e.g. 100"}
@@ -404,120 +580,104 @@ export default function AddMealScreen() {
           </View>
 
           <View style={styles.row}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Calories</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="kcal"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={calories}
-                onChangeText={setCalories}
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Protein (g)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="g"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={protein}
-                onChangeText={setProtein}
-              />
-            </View>
-          </View>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Calories</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="cal"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={calories}
+                    onChangeText={setCalories}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Protein (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="g"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={protein}
+                    onChangeText={setProtein}
+                  />
+                </View>
+              </View>
 
-          <View style={styles.row}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Carbs (g)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="g"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={carbs}
-                onChangeText={setCarbs}
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Fat (g)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="g"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={fat}
-                onChangeText={setFat}
-              />
-            </View>
-          </View>
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Carbs (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="g"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={carbs}
+                    onChangeText={setCarbs}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Fat (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="g"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={fat}
+                    onChangeText={setFat}
+                  />
+                </View>
+              </View>
 
-          <View style={styles.row}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Sodium (mg)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="mg"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={sodium}
-                onChangeText={setSodium}
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Cholesterol (mg)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="mg"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={cholesterol}
-                onChangeText={setCholesterol}
-              />
-            </View>
-          </View>
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Sodium (mg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="mg"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={sodium}
+                    onChangeText={setSodium}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Cholesterol (mg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="mg"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={cholesterol}
+                    onChangeText={setCholesterol}
+                  />
+                </View>
+              </View>
 
-          <View style={styles.row}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Sugars (g)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="g"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={sugars}
-                onChangeText={setSugars}
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Fiber (g)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="g"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={fiber}
-                onChangeText={setFiber}
-              />
-            </View>
-          </View>
-
-          {/* Meal Type Selector */}
-          <Text style={styles.label}>Meal Type</Text>
-          <View style={styles.mealTypeRow}>
-            {MEAL_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.mealTypeBtn, mealType === type && styles.mealTypeBtnActive]}
-                onPress={() => setMealType(type)}
-              >
-                <Text style={[styles.mealTypeText, mealType === type && styles.mealTypeTextActive]}>
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Sugars (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="g"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={sugars}
+                    onChangeText={setSugars}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <Text style={styles.label}>Fiber (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="g"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={fiber}
+                    onChangeText={setFiber}
+                  />
+                </View>
+              </View>
 
           {/* Save Button */}
           <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
@@ -528,7 +688,7 @@ export default function AddMealScreen() {
             )}
           </TouchableOpacity>
 
-          {isEditing && (
+          {isEditing ? (
             <TouchableOpacity 
               style={[styles.saveBtn, { backgroundColor: Colors.surface, marginTop: 12, borderWidth: 1, borderColor: Colors.inputBorder }]} 
               onPress={() => {
@@ -547,14 +707,37 @@ export default function AddMealScreen() {
                 setQuantity('100');
                 setUnit('g');
                 setBaseNutrition(null);
-                navigation.setParams({ editMeal: undefined, editDate: undefined, scannedProduct: undefined });
+                navigation.setParams({ editMeal: undefined, editDate: undefined, scannedProduct: undefined, copyMeal: undefined });
                 (navigation as any).navigate('History');
               }}
             >
               <Text style={[styles.saveBtnText, { color: Colors.textSecondary }]}>Cancel Edit ❌</Text>
             </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.saveBtn, { backgroundColor: Colors.surface, marginTop: 12, borderWidth: 1, borderColor: Colors.inputBorder }]} 
+              onPress={() => {
+                setShowManualEntry(false);
+                setFoodName('');
+                setCalories('');
+                setProtein('');
+                setCarbs('');
+                setFat('');
+                setSodium('');
+                setCholesterol('');
+                setSugars('');
+                setFiber('');
+                setQuantity('100');
+                setUnit('g');
+                setBaseNutrition(null);
+                navigation.setParams({ editMeal: undefined, editDate: undefined, scannedProduct: undefined, copyMeal: undefined });
+              }}
+            >
+              <Text style={[styles.saveBtnText, { color: Colors.textSecondary }]}>Close Manual Entry ❌</Text>
+            </TouchableOpacity>
           )}
         </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -681,4 +864,29 @@ const styles = StyleSheet.create({
   },
   barcodeBtnEmoji: { fontSize: 20 },
   barcodeBtnText: { color: Colors.primary, fontSize: 15, fontWeight: '700' },
+
+  // Quick Add & Manual Entry
+  quickAddContainer: { marginBottom: 16 },
+  quickAddScroll: { marginTop: 8 },
+  quickAddCard: {
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 12,
+    marginRight: 12,
+    width: 140,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+  },
+  quickAddName: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 4 },
+  quickAddCalories: { fontSize: 13, color: Colors.primary },
+  manualEntryBtn: {
+    backgroundColor: Colors.surface,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+  },
+  manualEntryBtnText: { color: Colors.text, fontSize: 16, fontWeight: '600' },
 });

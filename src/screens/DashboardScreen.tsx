@@ -202,6 +202,10 @@ export default function DashboardScreen() {
 
   const startFasting = async (startTime: string) => {
     if (!user) return;
+    setDailyLog((prev) => ({
+      ...(prev || { date: selectedDate, meals: [], totals: { calories: 0, protein: 0, carbs: 0, fat: 0, waterIntake: 0 } }),
+      fastingStart: startTime,
+    }));
     await updateFastingTimes(user.uid, selectedDate, startTime, 'clear');
     const log = await getDailyLog(user.uid, selectedDate);
     setDailyLog(log);
@@ -225,7 +229,14 @@ export default function DashboardScreen() {
 
   const handleEndFasting = async () => {
     if (!user) return;
-    await updateFastingTimes(user.uid, selectedDate, null, new Date().toISOString());
+    const endTime = new Date().toISOString();
+    if (dailyLog) {
+      setDailyLog({
+        ...dailyLog,
+        fastingEnd: endTime,
+      });
+    }
+    await updateFastingTimes(user.uid, selectedDate, null, endTime);
     const log = await getDailyLog(user.uid, selectedDate);
     setDailyLog(log);
   };
@@ -305,6 +316,24 @@ export default function DashboardScreen() {
             <Text style={styles.mascotName}>Henni</Text>
           </View>
         </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: Colors.primary }]}
+          onPress={() => navigation.navigate('AddMeal')}
+        >
+          <Text style={styles.actionEmoji}>🍽️</Text>
+          <Text style={styles.actionText}>Add Meal</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: Colors.surface }]}
+          onPress={handleLogWeight}
+        >
+          <Text style={styles.actionEmoji}>⚖️</Text>
+          <Text style={styles.actionText}>Log Weight</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Calorie Ring */}
@@ -410,106 +439,12 @@ export default function DashboardScreen() {
           
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={styles.bitepalGoalText}>Goal: {goals.fastingHours || 14}h</Text>
-            <Text style={styles.bitepalGoalText}>•••</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Weight Tracker (Bitepal Style) */}
-      <View style={styles.bitepalCard}>
-        <View style={styles.bitepalRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.bitepalSubtitle}>Weight</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-              <Text style={styles.bitepalTitle}>{dailyLog?.currentWeight || recentWeight?.weight || '--'}</Text>
-              <Text style={[styles.bitepalSubtitle, { marginLeft: 8, fontSize: 24, marginBottom: 0 }]}>lbs</Text>
-            </View>
-          </View>
-          
-          <TouchableOpacity 
-            style={styles.bitepalActionBtn} 
-            onPress={handleLogWeight}
-          >
-            <Text style={[styles.bitepalActionText, { fontSize: 32 }]}>+</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.bitepalFooter}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-            <Text style={styles.bitepalGoalText}>
-              {getWeightGoalText(dailyLog?.currentWeight || recentWeight?.weight, goals.weight)}
-            </Text>
-            <Text style={styles.bitepalGoalText}>•••</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Medications & Vitamins */}
-      <View style={styles.medsCard}>
-        <TouchableOpacity style={styles.medsRow} onPress={handleToggleMeds}>
-          <View style={styles.medsLeft}>
-            <Text style={styles.medsEmoji}>💊</Text>
-            <Text style={styles.medsLabel}>Medications & Vitamins</Text>
-          </View>
-          <View style={[styles.medsCheck, dailyLog?.medicationsTaken && styles.medsCheckActive]}>
-            <Text style={styles.medsCheckText}>{dailyLog?.medicationsTaken ? '✓' : ''}</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Creatine Tracker */}
-      <View style={styles.medsCard}>
-        <TouchableOpacity style={styles.medsRow} onPress={handleToggleCreatine}>
-          <View style={styles.medsLeft}>
-            <Text style={styles.medsEmoji}>💪</Text>
-            <Text style={styles.medsLabel}>Creatine Taken</Text>
-          </View>
-          <View style={[styles.medsCheck, dailyLog?.creatineTaken && styles.medsCheckActive]}>
-            <Text style={styles.medsCheckText}>{dailyLog?.creatineTaken ? '✓' : ''}</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Quick Actions */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: Colors.primary }]}
-          onPress={() => navigation.navigate('AddMeal')}
-        >
-          <Text style={styles.actionEmoji}>🍽️</Text>
-          <Text style={styles.actionText}>Add Meal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: Colors.surface }]}
-          onPress={handleLogWeight}
-        >
-          <Text style={styles.actionEmoji}>⚖️</Text>
-          <Text style={styles.actionText}>Log Weight</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Weight modal (Android fallback) */}
-      {showWeightModal && (
-        <View style={styles.weightModal}>
-          <Text style={styles.weightModalTitle}>Log Weight</Text>
-          <TextInput
-            style={styles.weightInput}
-            placeholder="Weight (lbs)"
-            placeholderTextColor={Colors.textSecondary}
-            keyboardType="numeric"
-            value={weightInput}
-            onChangeText={setWeightInput}
-          />
-          <View style={styles.weightModalBtns}>
-            <TouchableOpacity onPress={() => setShowWeightModal(false)}>
-              <Text style={styles.weightCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={submitWeight}>
-              <Text style={styles.weightSubmit}>Save</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Settings' as any)}>
+              <Text style={styles.bitepalGoalText}>•••</Text>
             </TouchableOpacity>
           </View>
         </View>
-      )}
+      </View>
 
       {/* Fasting Modal */}
       {showFastingModal && lastMealInfo && (
@@ -545,6 +480,87 @@ export default function DashboardScreen() {
               }}
             >
               <Text style={{ color: '#fff', fontWeight: '700' }}>From Last Meal</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Weight Tracker (Bitepal Style) */}
+      <View style={styles.bitepalCard}>
+        <View style={styles.bitepalRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bitepalSubtitle}>Weight</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text style={styles.bitepalTitle}>{dailyLog?.currentWeight || recentWeight?.weight || '--'}</Text>
+              <Text style={[styles.bitepalSubtitle, { marginLeft: 8, fontSize: 24, marginBottom: 0 }]}>lbs</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.bitepalActionBtn} 
+            onPress={handleLogWeight}
+          >
+            <Text style={[styles.bitepalActionText, { fontSize: 32 }]}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.bitepalFooter}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+            <Text style={styles.bitepalGoalText}>
+              {getWeightGoalText(dailyLog?.currentWeight || recentWeight?.weight, goals.weight)}
+            </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Settings' as any)}>
+              <Text style={styles.bitepalGoalText}>•••</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Medications & Vitamins */}
+      <View style={styles.medsCard}>
+        <TouchableOpacity style={styles.medsRow} onPress={handleToggleMeds}>
+          <View style={styles.medsLeft}>
+            <Text style={styles.medsEmoji}>💊</Text>
+            <Text style={styles.medsLabel}>Medications & Vitamins</Text>
+          </View>
+          <View style={[styles.medsCheck, dailyLog?.medicationsTaken && styles.medsCheckActive]}>
+            <Text style={styles.medsCheckText}>{dailyLog?.medicationsTaken ? '✓' : ''}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Creatine Tracker */}
+      <View style={styles.medsCard}>
+        <TouchableOpacity style={styles.medsRow} onPress={handleToggleCreatine}>
+          <View style={styles.medsLeft}>
+            <Text style={styles.medsEmoji}>💪</Text>
+            <Text style={styles.medsLabel}>Creatine Taken</Text>
+          </View>
+          <View style={[styles.medsCheck, dailyLog?.creatineTaken && styles.medsCheckActive]}>
+            <Text style={styles.medsCheckText}>{dailyLog?.creatineTaken ? '✓' : ''}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+
+      {/* Weight modal (Android fallback) */}
+      {showWeightModal && (
+        <View style={styles.weightModal}>
+          <Text style={styles.weightModalTitle}>Log Weight</Text>
+          <TextInput
+            style={styles.weightInput}
+            placeholder="Weight (lbs)"
+            placeholderTextColor={Colors.textSecondary}
+            keyboardType="numeric"
+            value={weightInput}
+            onChangeText={setWeightInput}
+          />
+          <View style={styles.weightModalBtns}>
+            <TouchableOpacity onPress={() => setShowWeightModal(false)}>
+              <Text style={styles.weightCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={submitWeight}>
+              <Text style={styles.weightSubmit}>Save</Text>
             </TouchableOpacity>
           </View>
         </View>

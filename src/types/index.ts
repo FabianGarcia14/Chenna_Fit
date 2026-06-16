@@ -119,9 +119,9 @@ export type MascotState =
 // Keep MascotMood as alias for backward compatibility
 export type MascotMood = MascotState;
 
-// ── USDA API ──────────────────────────────────────────
-export interface USDAFoodResult {
-  fdcId: number;
+// ── Food Search API ───────────────────────────────────
+export interface FoodSearchResult {
+  fdcId: number | string;
   description: string;
   calories: number;
   protein: number;
@@ -131,6 +131,19 @@ export interface USDAFoodResult {
   cholesterol?: number;
   sugars?: number;
   fiber?: number;
+  source?: 'usda' | 'openfoodfacts';
+  brand?: string;
+  servingQuantity?: number;
+}
+
+// Keep USDAFoodResult as alias for backward compatibility
+export type USDAFoodResult = FoodSearchResult;
+
+export interface RecentMealCombo {
+  comboId: string;
+  meal: Meal;
+  mealType: MealType;
+  lastUsed: string;
 }
 
 // ── Open Food Facts ───────────────────────────────────────
@@ -139,6 +152,7 @@ export interface OpenFoodFactsResult {
   name: string;
   brand?: string;
   servingSize?: string;
+  servingQuantity?: number;
   calories: number;
   protein: number;
   carbs: number;
@@ -158,7 +172,7 @@ export type AuthStackParamList = {
 
 export type MainTabParamList = {
   Dashboard: undefined;
-  AddMeal: { scannedProduct?: OpenFoodFactsResult, editMeal?: Meal, editDate?: string } | undefined;
+  AddMeal: { scannedProduct?: OpenFoodFactsResult, editMeal?: Meal, editDate?: string, copyMeal?: Meal } | undefined;
   History: undefined;
   Settings: undefined;
 };

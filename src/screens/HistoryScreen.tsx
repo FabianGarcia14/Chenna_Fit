@@ -275,13 +275,47 @@ export default function HistoryScreen() {
 
       {loading && <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />}
 
+      {/* Meals List */}
+      {viewMode === 'Daily' && selectedLog && selectedLog.meals.length > 0 && (
+        <View style={styles.mealsCard}>
+          <Text style={styles.mealsTitle}>Meals ({selectedLog.meals.length})</Text>
+          {['Breakfast', 'Lunch', 'Dinner', 'Snack'].map((mealType) => {
+            const mealsOfType = selectedLog.meals.filter((m: Meal) => m.type === mealType);
+            if (mealsOfType.length === 0) return null;
+            return (
+              <View key={mealType} style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.primaryLight, marginBottom: 8, paddingHorizontal: 4 }}>
+                  {mealType}
+                </Text>
+                {mealsOfType.map((meal: Meal, idx: number) => (
+                  <TouchableOpacity key={meal.id || idx} style={styles.mealItem} onPress={() => handleMealPress(meal)}>
+                    <View style={styles.mealLeft}>
+                      <Text style={styles.mealName}>
+                        {meal.name}
+                        {meal.quantity && meal.quantity > 0 ? ` (${meal.quantity}${meal.unit || 'g'})` : ''}
+                      </Text>
+                    </View>
+                    <View style={styles.mealRight}>
+                      <Text style={styles.mealCal}>{Math.round(meal.calories)} cal</Text>
+                      <Text style={styles.mealMacros}>
+                        P:{meal.macros.protein}g C:{meal.macros.carbs}g F:{meal.macros.fat}g
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* Daily Summary */}
       {!loading && viewMode === 'Daily' && selectedLog && (
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Daily Summary</Text>
           {/* Calories */}
           <View style={[styles.macroRow, { marginBottom: 16 }]}>
-            <MacroCard icon="🔥" label="Calories" current={selectedLog.totals.calories} goal={user?.goals?.calories || 2000} color={Colors.primary} unit="kcal" />
+            <MacroCard icon="🔥" label="Calories" current={selectedLog.totals.calories} goal={user?.goals?.calories || 2000} color={Colors.primary} unit="cal" />
           </View>
 
           {/* Main Macros */}
@@ -361,30 +395,6 @@ export default function HistoryScreen() {
         <View style={styles.emptyCard}>
           <Text style={styles.emptyEmoji}>📭</Text>
           <Text style={styles.emptyText}>No data for this day</Text>
-        </View>
-      )}
-
-      {/* Meals List */}
-      {viewMode === 'Daily' && selectedLog && selectedLog.meals.length > 0 && (
-        <View style={styles.mealsCard}>
-          <Text style={styles.mealsTitle}>Meals ({selectedLog.meals.length})</Text>
-          {selectedLog.meals.map((meal: Meal, idx: number) => (
-            <TouchableOpacity key={meal.id || idx} style={styles.mealItem} onPress={() => handleMealPress(meal)}>
-              <View style={styles.mealLeft}>
-                <Text style={styles.mealType}>{meal.type}</Text>
-                <Text style={styles.mealName}>
-                  {meal.name}
-                  {meal.quantity && meal.quantity > 0 ? ` (${meal.quantity}${meal.unit || 'g'})` : ''}
-                </Text>
-              </View>
-              <View style={styles.mealRight}>
-                <Text style={styles.mealCal}>{Math.round(meal.calories)} kcal</Text>
-                <Text style={styles.mealMacros}>
-                  P:{meal.macros.protein}g C:{meal.macros.carbs}g F:{meal.macros.fat}g
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
         </View>
       )}
 
@@ -587,10 +597,77 @@ export default function HistoryScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Meal Options</Text>
             {selectedMealForOptions && (
-              <Text style={styles.modalSubtitle}>
-                What would you like to do with {selectedMealForOptions.name}?
-              </Text>
+              <>
+                <Text style={styles.modalSubtitle}>
+                  What would you like to do with {selectedMealForOptions.name}?
+                </Text>
+
+                <View style={{ backgroundColor: Colors.surface, padding: 16, borderRadius: 16, marginBottom: 20, width: '100%' }}>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 4 }}>
+                    {Math.round(selectedMealForOptions.calories)} cal
+                  </Text>
+                  {selectedMealForOptions.quantity ? (
+                    <Text style={{ fontSize: 14, color: Colors.primaryLight, textAlign: 'center', marginBottom: 16, fontWeight: '600' }}>
+                      Quantity: {selectedMealForOptions.quantity} {selectedMealForOptions.unit || 'g'}
+                    </Text>
+                  ) : null}
+                  
+                  <View style={{ gap: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 14, color: Colors.secondary, fontWeight: '700' }}>Protein</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.protein}g</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 14, color: Colors.warning, fontWeight: '700' }}>Carbs</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.carbs}g</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 14, color: Colors.success, fontWeight: '700' }}>Fats</Text>
+                      <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.fat}g</Text>
+                    </View>
+                    {(selectedMealForOptions.macros.sugars || selectedMealForOptions.macros.fiber || selectedMealForOptions.macros.sodium || selectedMealForOptions.macros.cholesterol) ? (
+                      <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 4 }} />
+                    ) : null}
+                    {selectedMealForOptions.macros.sugars ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 14, color: Colors.textSecondary, fontWeight: '600' }}>Sugar</Text>
+                        <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.sugars}g</Text>
+                      </View>
+                    ) : null}
+                    {selectedMealForOptions.macros.fiber ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 14, color: Colors.textSecondary, fontWeight: '600' }}>Fiber</Text>
+                        <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.fiber}g</Text>
+                      </View>
+                    ) : null}
+                    {selectedMealForOptions.macros.sodium ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 14, color: Colors.textSecondary, fontWeight: '600' }}>Sodium</Text>
+                        <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.sodium}mg</Text>
+                      </View>
+                    ) : null}
+                    {selectedMealForOptions.macros.cholesterol ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 14, color: Colors.textSecondary, fontWeight: '600' }}>Cholesterol</Text>
+                        <Text style={{ fontSize: 14, color: Colors.text, fontWeight: '600' }}>{selectedMealForOptions.macros.cholesterol}mg</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </>
             )}
+
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: Colors.success, marginBottom: 12 }]}
+              onPress={() => {
+                if (selectedMealForOptions) {
+                  setMealOptionsVisible(false);
+                  (navigation as any).navigate('AddMeal', { copyMeal: selectedMealForOptions });
+                }
+              }}
+            >
+              <Text style={styles.editBtnText}>➕ Add Again Today</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.modalBtn, styles.editBtn]}

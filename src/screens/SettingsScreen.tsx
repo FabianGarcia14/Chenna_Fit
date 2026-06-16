@@ -136,7 +136,7 @@ export default function SettingsScreen() {
         <Text style={styles.cardTitle}>Daily Goals</Text>
 
         <View style={styles.goalRow}>
-          <Text style={styles.goalLabel}>🔥 Calories (kcal)</Text>
+          <Text style={styles.goalLabel}>🔥 Calories (cal)</Text>
           <TextInput
             style={styles.goalInput}
             keyboardType="numeric"
@@ -323,7 +323,7 @@ export default function SettingsScreen() {
       {/* App Info */}
       <View style={styles.appInfo}>
         <Text style={styles.appName}>🐕 Perrito Fit</Text>
-        <Text style={styles.appVersion}>Version 1.0.0</Text>
+        <Text style={styles.appVersion}>Version 1.1.0</Text>
         <Text style={styles.appMascots}>Mali 🐕‍🦺 & Henni 🐕</Text>
       </View>
 

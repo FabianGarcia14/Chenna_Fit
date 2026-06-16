@@ -26,14 +26,7 @@ export default function CircularProgress({
   const clampedProgress = Math.min(Math.max(progress, 0), 1);
   const radius = size / 2;
   const innerSize = size - strokeWidth * 2;
-
-  // Degrees filled (0-360)
   const degrees = clampedProgress * 360;
-
-  // For the half-circle trick we need to handle <180° and ≥180° separately.
-  const rotate1 = degrees > 180 ? 180 : degrees;
-  const rotate2 = degrees > 180 ? degrees - 180 : 0;
-  const showSecondHalf = degrees > 180;
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
@@ -51,60 +44,38 @@ export default function CircularProgress({
         ]}
       />
 
-      {/* ── Right half (0-180°) ───────────────────── */}
-      <View
-        style={[
-          styles.halfClip,
-          {
-            width: radius,
-            height: size,
-            left: radius,
-            overflow: 'hidden',
-          },
-        ]}
-      >
+      {/* Right half clip */}
+      <View style={{ position: 'absolute', width: radius, height: size, left: radius, overflow: 'hidden' }}>
         <View
-          style={[
-            styles.halfCircle,
-            {
+          style={{
+            width: size,
+            height: size,
+            borderRadius: radius,
+            borderWidth: strokeWidth,
+            borderColor: color,
+            left: -radius,
+            borderLeftColor: 'transparent',
+            borderBottomColor: 'transparent',
+            transform: [{ rotate: `${-135 + (degrees > 180 ? 180 : degrees)}deg` }],
+          }}
+        />
+      </View>
+
+      {/* Left half clip */}
+      {degrees > 180 && (
+        <View style={{ position: 'absolute', width: radius, height: size, left: 0, overflow: 'hidden' }}>
+          <View
+            style={{
               width: size,
               height: size,
               borderRadius: radius,
               borderWidth: strokeWidth,
               borderColor: color,
-              left: -radius,
-              transform: [{ rotate: `${rotate1}deg` }],
-            },
-          ]}
-        />
-      </View>
-
-      {/* ── Left half (180-360°) ──────────────────── */}
-      {showSecondHalf && (
-        <View
-          style={[
-            styles.halfClip,
-            {
-              width: radius,
-              height: size,
               left: 0,
-              overflow: 'hidden',
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.halfCircle,
-              {
-                width: size,
-                height: size,
-                borderRadius: radius,
-                borderWidth: strokeWidth,
-                borderColor: color,
-                left: radius,
-                transform: [{ rotate: `${rotate2}deg` }],
-              },
-            ]}
+              borderLeftColor: 'transparent',
+              borderBottomColor: 'transparent',
+              transform: [{ rotate: `${-135 + (degrees - 180)}deg` }],
+            }}
           />
         </View>
       )}
@@ -134,17 +105,6 @@ const styles = StyleSheet.create({
   },
   ring: {
     position: 'absolute',
-  },
-  halfClip: {
-    position: 'absolute',
-    top: 0,
-  },
-  halfCircle: {
-    position: 'absolute',
-    top: 0,
-    borderLeftColor: 'transparent',
-    borderBottomColor: 'transparent',
-    transformOrigin: 'center center',
   },
   center: {
     position: 'absolute',

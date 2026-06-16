@@ -2,7 +2,7 @@
   "expo": {
     "name": "Perrito Fit",
     "slug": "perrito-fit",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.jpg",
     "userInterfaceStyle": "dark",

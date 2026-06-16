@@ -18,6 +18,15 @@ Users can log their meals, water intake, daily macro-nutrients, and weight. The 
 
 ---
 
+## What's New in v1.1.0
+
+- **Barcode Scanner Enhancements:** `CameraView` works gracefully on web, with a manual barcode entry text input and 'Look Up' button as a fallback.
+- **Optimistic UI for Fasting:** Instant UI updates when starting or ending a fast on the Dashboard.
+- **Quick Settings Access:** Tap the '•••' on the Fasting and Weight Dashboard cards to jump directly to Settings.
+- **Bug Fix:** Addressed a Firestore bug where daily logs incorrectly stored `'clear'` string instead of proper null/deleted fields for fasting times.
+
+---
+
 ## Features
 
 - **Interactive Mascot (Henni):** A virtual dog that reacts dynamically to your logging actions (eating, drinking, celebrating, sleeping, and encouraging).
